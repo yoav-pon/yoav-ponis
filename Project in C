@@ -1701,3 +1701,5 @@ void calculation(shopid_t *rout[])/*Amit Lazar*/ {
 		}
 	} fclose(text); //close fuel file
 }
+
+//option 7:

@@ -1,0 +1,1706 @@
+#include <stdio.h>
+#include <stdlib.h> 
+#include <time.h>                 
+#include <string.h>
+
+/*---------------------const-word-----------------------------*/
+
+#define K 30
+#define LETSPLAY "letsPlay.txt"
+#define BARCODEFILE "package.bmp"
+#define MAP "map.txt"
+#define ROUTE "route.txt"
+#define FUEL "fuel.txt"
+#define H_SIZE 71	//The barcode image height in pixels
+#define W_SIZE 140	//Barcode image width in pixels
+#define NEWBARCODE "newbarcode.bmp"
+#define Fuel_consumption_coefficient 0.1 //Units [l\hour]
+#define CONSTANT 30 //VELOCITY 60 [km\hour] * Velocity_Fuel_consumption 0.2 [litter*hour\km] unit of constant is [litter]
+#define VELOCITY 60.0 // unit [km\hour]
+
+////////////////////////////////////////////////////////
+
+typedef struct store {
+	int data[12];
+	int double_gift;
+	int flag;//Mark for same gift card
+	int id;
+	struct h_list *next;
+} store_t;
+typedef  struct node {
+	int id;
+	int v1;
+	int v2;
+	int v3;
+	struct node *next1;
+	struct node *next2;
+	struct node *next3;
+	int dis1;
+	int dis2;
+	int dis3;
+	int disdes1;
+	int disdes2;
+	int disdes3;
+	int packdes1, packdes2, packdes3;
+	int flag;
+	int packs;
+} shopid_t;
+typedef struct {
+	int from;
+	int to;
+	int dis;
+}mapdetail_t;
+typedef struct nextstore { // This structure helps representing a path for a driver
+	int distTotal;	//accumulating distance in a path
+	int packCount;	//packages for a store
+	int packTotal;	//accumulating packages in a path
+	int store;		//a number 0-10
+	struct nextstore *next;
+}path_t;
+typedef struct search {
+	int des;
+	int pack;
+	shopid_t* nexty;
+	int dis;
+}search;
+
+/*--------------------option1+option2-funcions-(Daniel Gutkind)-----------------------*/
+
+//option 1:
+
+void Scan_barcode();//Performs a barcode scan from a BMP file according to the UPC standard and saves it to a txt file
+
+int Barcode_decoder(FILE *barcode, int p_hight, int p_width, int pad);/* "*barcode" pointer to barcode file (BMP),
+																	  "p_hight" image height in pixels, "p_width" image width in pixels, "pad" The number of bytes for padding.
+																	  Decodes the barcode in a file, if succeed return 0, if not 1.
+																	  */
+
+int pic_width(FILE *pictcher);//get pointer to bmp file ,return the width(pixels) of the BMP image.
+
+int pic_hight(FILE *pictcher1);//get pointer to bmp file ,return the hight(pixels) of the BMP image.
+
+int padding_lines(FILE *pictcher2);//get pointer to bmp file ,return the numbre  padding bytes of the BMP image.
+
+int Barcode_guards(int **b_mat, int row, int col);/* "**b_mat" pointer to the barcode matrix, "row" number of lines in the matrix,
+												  "col" number of columns in the matrix. check the barcode guards by UPC standard. If it's ok returns 0, otherwise returns 1.
+												  */
+
+void barcode_analyz(int **b_mat, int row, int col);/* "**b_mat" pointer to the barcode matrix, "row" number of lines in the matrix,
+												   "col" number of columns in the matrix. Analyzes the barcode and saves it*/
+
+int legal_check(int barcode_num[12]);/* "barcode_num" array of barcode number
+									 check the modulo character as UPC standard, check if the store exist, if wrong return 1 else return 0.*/
+
+void barcode_save(int barcode_num[12]);//"barcode_num" array of barcode number, save barcode in letsplay file.
+									   /*Also used in Option 2*/
+
+int Barcode_to_int(char arr[7], int index);/* "arr" array of 0 and 1, "index" Position within barcode (left).
+										   return the number according to the UPC standard, if wrong return -1.*/
+
+int barcode_exists(int bar_n[12]);/* "bar_n" array of barcode number check if the barcode allredy in the list.
+								  if it's in return 1, else return 0. */
+
+								  //option 2:
+
+void genarat_barcode();//Creates a new barcode
+
+void barcode_build(int store);//get a store number and creates a new barcode
+
+int gift_id_check(int gift_num, int id_num);//get a gift number and ID number, checks exists in letsplay
+
+void barcode_to_bmp(int b_code[12]);//get the barcode array and creates an bmp file of the barcode
+
+void set_zeroes_and_guards(static int barcode_m[H_SIZE][W_SIZE]);
+
+void put_code_in_matrix(static int mat[H_SIZE][W_SIZE], int index, int code);
+
+FILE *header_for_bmp();//Creates a new BMP file, writes the header into it, return  pointer to the file
+
+
+
+					   /*--------------------option3-funcions-(amit lazar)-----------------------*/
+
+void option3ListPacks();
+
+int store_number();
+/*In this the user enter a store number between 1 to 10.
+User cannot exit from this command untill he enter one legal store*/
+
+void make_list(store_t *h, store_t *p, int store);
+/*This function bulit a list for barcode at store that the user wanted*/
+
+int count_packages_for_store(FILE *letsplay, int store);
+/*This Function gets a pointer for "letsplay" File and the store number that the user enterd.
+It's count in "letsplay" File how many packages in the store that the user asked for*/
+
+void data_to_list(store_t *pointer, FILE *text, int s_num);
+/*This Function gets a pointer from store_t list, pointer for "letsplay" File and the store number that the user enterd.
+It's search in "letsplay" File the barcode for the store that's the user asked for */
+
+void set_flag_and_id_in_list(store_t *store);
+/*This Function gets a pointer from store_t list.
+It's save the the gift number and id number for each barcode*/
+
+void matrix_list(store_t *first, int num, int store_num);
+/*This Function gets a pointer from store_t list, package and the store number that the user enterd.
+It's save the list in a matrix and sort it by the smallest barcode id number */
+
+void  print_list(int *list[], int rows, int store);
+/*This function gets a pointer from the Matrix list and rows. matrix rows are package number.
+It's search for the same gift number in the barcode number and print the barcode list from the store that's the user asked for*/
+
+void free_list(store_t *head);
+
+
+
+/*--------------------option4+option5-funcions-(yoav ponis)-----------------------*/
+
+//option4:
+int option4PrintsPathes();
+
+void Mapdetail(mapdetail_t *mapdet, char *maptex, int numchar, int rnum);
+/*Also used in Option 5*/
+void listconctionbilder(int rownum, mapdetail_t *mapdet, shopid_t *station);
+
+void printroute(shopid_t *shop, shopid_t* factory, shopid_t* caller, int callid);
+
+shopid_t *TheTreeBilder(shopid_t *map, shopid_t *tree);
+
+void zeroes(shopid_t *station);
+/*Also used in Option 5*/
+
+//option5:
+int option5DriverPath();
+
+void Free_tree(shopid_t *tree);
+
+void count_packages(shopid_t *store);
+
+int TheDisDes(shopid_t *shop);
+
+shopid_t *all_paths(shopid_t *map, shopid_t *tree);
+
+void Search(shopid_t *tree, shopid_t* rout[], int i, int distans, int totalpack);
+
+int ThePackdes(shopid_t *shop);
+
+void theprinter(shopid_t* rout[], FILE*ptrfile);
+
+void zero(shopid_t *tree, shopid_t map[]);
+
+/*--------------------option6-funcions-(amit lazar)-----------------------*/
+
+int countrow(int numchar, char*maptext);//ספירת דרכים
+
+void Mapdetail(mapdetail_t *mapdet, char *maptext, int numchar);//
+
+void listconctionbilder(int rownum, mapdetail_t *mapdet, shopid_t *station);//
+
+void count_packages(shopid_t *store);
+
+void zeroes(shopid_t *station);
+
+int TheDisDes(shopid_t *shop);
+
+int ThePackdes(shopid_t *shop);
+
+void zero(shopid_t *tree, shopid_t map[]);//
+
+shopid_t *all_paths(shopid_t *map, shopid_t *tree);//כל הדרכים האפשריות
+
+void Search(shopid_t *tree, shopid_t* rout[], int i, int distans, int totalpack);
+
+void Free_tree(shopid_t *tree);//This Function free all routes options 
+
+							   /*Functions uses for option 6*/
+void option6FuelConsumption();//Amit Lazar
+
+int get_fuel_tank();//Amit Lazar
+					/*In get_fuel_tank function the users enter the value for gas tank between 0 to 100.
+					the user enter ONLY those integer values and cannot exit from this command untill
+					he enter one value.*/
+
+void get_way(FILE *m);//Amit Lazar
+					  /*This function get a pointer for map FILE, Its based on Option 5*/
+
+void calculation(shopid_t *rout[]);//Amit Lazar
+								   /*This function get a pointr for the rellevant road
+								   and prints the time it tooks to arrive to next store, the current fual and the
+								   packages for each store in the road.
+								   Formula for fual calculation is:
+								   current fuel-dt*alpha*current fuel*package number for relevant store-dt*beta*V
+								   alpha-Fuel consumption coefficient
+								   beta-Fuel consumption coefficient of speed
+								   V-velocity
+								   dt-difference time*/
+
+
+
+
+								   /*--------------------option7-funcions-(dnaiel gutkind)-----------------------*/
+
+								   /*----------------------------------------------------------------------------------*/
+
+								   /*-------------------------------------main------------------------------------*/
+int main()
+{
+
+	int choice = 0;
+	do {
+		printf("--------------------------\nBoNessahek delivery services\n--------------------------\nMenu:\n");
+		printf("1. Scan barcode.\n2. Generate barcode.\n3. List Store packages.\n4. Genrate all routes\n5. Generate driver route.\n6. Fuel consumption report.\n7. Students addition\n9. Exit.\nEnter choice: ");
+		scanf_s("%d", &choice);
+		printf("\n");
+		switch (choice) {
+		case 1: Scan_barcode(); break;
+		case 2: genarat_barcode(); break;
+		case 3: option3ListPacks(); break;
+		case 4: option4PrintsPathes(); break;
+		case 5: option5DriverPath(); break;
+		case 6: option6FuelConsumption(); break;
+			//case 7: printf("Student addition here!\n\n"); break;
+		case 9: printf("Good bye!\n"); break;
+		default: printf("Bad input, try again\n\n");
+		}
+	} while (choice != 9);
+}
+/*------------------------------------------------------------------------*/
+
+
+/*--------------------------option1+option2-code----------------------------*/
+
+//option 1:
+
+void Scan_barcode()
+{
+	FILE *pk = NULL;
+	int p_hight, p_width, pad;
+
+	fopen_s(&pk, BARCODEFILE, "rb"); //check if barcode file exist
+	if (pk == NULL)
+	{
+		printf("can't open barcode file\n");
+		return;
+	}
+
+	//start working on the barcode
+	Barcode_decoder(pk, pic_hight(pk), pic_width(pk), padding_lines(pk));
+
+	//close barcode file 
+	fclose(pk);
+};
+
+int Barcode_decoder(FILE *barcode, int p_hight, int p_width, int pad) {
+	int **barcode_matrix = NULL;
+	int i, j, k, ch;
+
+	//Plating memory to matrix
+	barcode_matrix = malloc(sizeof(int)*p_hight);
+	for (i = 0; i < p_hight; i++) barcode_matrix[i] = malloc(sizeof(int)*p_width);
+
+	//geting matrix values
+	fseek(barcode, 54, SEEK_SET);//Skip to the beginning of the image
+	for (i = 0; i < p_hight; i++) {
+		for (j = 0; j <p_width; j++) {
+			ch = fgetc(barcode);
+			if (ch == 255) 	barcode_matrix[i][j] = 0;//0 for whight pixel,
+			else  barcode_matrix[i][j] = 1;
+			fgetc(barcode);
+			fgetc(barcode);
+		}
+		for (k = 0; k < pad; k++)  fgetc(barcode);
+	}//skip the padding
+
+	 //First test for the integrity of the barcode
+	if (Barcode_guards(barcode_matrix, p_hight, p_width) != 0)  return 1;
+
+	//Decoding the barcode into a number, checking whether it is a valid number and saving it to the system
+	barcode_analyz(barcode_matrix, p_hight, p_width);
+
+	//free matrix memory
+	for (i = 0; i < p_hight; i++)  free(barcode_matrix[i]);
+	free(barcode_matrix);
+	return 0;
+};
+
+int Barcode_guards(int **b_mat, int row, int col)
+{
+	int i, j, line = 0, offset = 0;
+
+	////Skip to the first black pixel in the barcode
+	for (i = 0; i < row; i++) {
+		for (j = 0; j < col; j++) {
+			if (b_mat[i][j] == 1) {
+				line = i;
+				offset = j;
+				j = col;
+				i = row;
+			}
+		}
+	}
+
+	//Check for valid guards
+	if (b_mat[line][offset] == b_mat[line][offset + 2] == b_mat[line][offset + 46] ==
+		b_mat[line][offset + 48] == b_mat[line][offset + 92] == b_mat[line][offset + 94] == 1)
+	{
+		if (b_mat[line][offset - 1] == b_mat[line][offset + 1] == b_mat[line][offset + 45] ==
+			b_mat[line][offset + 47] == b_mat[line][offset + 49] == b_mat[line][offset + 93] ==
+			b_mat[line][offset + 95] == 0)	return 0;
+	}
+
+	//if the guards are unvalid
+	return 1;
+}
+
+void barcode_analyz(int **bar, int hight, int width)
+{
+	int i, j, h, w, t, product[12] = { 0 };
+	char code[8];
+
+	//find the index whan the barcode starts
+	for (i = hight - 1; i > 0; i--) {
+		for (j = 0; j < width - 1; j++) {
+			if (bar[i][j] != 0) {
+				h = i;
+				w = j + 3;
+				i = 0;
+				j = width;
+			}
+		}
+	}
+
+	//start analyz the barcode
+	for (j = 0; j < 12; j++) {
+		if (j == 6) w = w + 5;//use to skip the center guard.
+		for (i = 0; i < 7; i++) {//get the barcode to "code" string
+			code[i] = '0';
+			if (bar[h][w + i] != 0)	 code[i] = '1';
+		}
+		code[i] = '\0';
+		t = Barcode_to_int(code, j);
+		if (t == -1) return; //Second test of the legality of a barcode
+		product[j] = t;
+		w = w + 7;
+	}
+
+	//third test of the legality of a barcode 
+	if (1 == legal_check(product))  return;
+
+	//check if the barcode is allredy exist  & save barcode in letsplay
+	if (0 == barcode_exists(product))  barcode_save(product);
+};
+
+int legal_check(int b_num[12]) {
+
+	int i, sum = 0;
+
+	//check digit number
+	for (i = 0; i < 11; i = i + 2)
+		sum = sum + 3 * b_num[i];
+
+	for (i = 1; i < 10; i = i + 2)
+		sum = sum + b_num[i];
+
+	for (i = 0; i < sum; i = i + 10);
+
+	if ((i - sum) == b_num[11])
+	{
+		//check if the store exist
+		if ((b_num[3] * 10 + b_num[4]) > 10 || (b_num[3] * 10 + b_num[4]) < 1)
+		{
+			printf_s("Destination store %d does not exist.\n", (b_num[3] * 10 + b_num[4]));
+			return 1;
+		}
+		return 0;
+	}
+
+	return 1;
+}
+
+int barcode_exists(int bar_n[12])
+{
+	FILE *tx = NULL;
+	int i, c = 0;
+	int temp[6];
+
+	//check if "lets play" file exist
+	fopen_s(&tx, LETSPLAY, "r+t");
+	if (tx == NULL)
+		return 0;
+
+	do {//check if ID allredy exist in "lets play" file .
+		for (i = 0; i < 5; i++)	fgetc(tx);
+		for (i = 0; i < 6; i++)	temp[i] = fgetc(tx) - 48;
+		c = 0;
+		for (c = i = 0; i < 6; i++)	if (temp[i] == bar_n[5 + i]) ++c;
+		if (c == 6) {//whan the id allredy exist
+			printf("Barcode ");
+			for (i = 0; i < 12; i++)	printf("%d", bar_n[i]);
+			printf(" is already in letsPlay.txt.\n");
+			return 1;
+		}
+		for (i = 0; i < 3; i++)	c = fgetc(tx);
+		if (c != EOF)	fseek(tx, -1, SEEK_CUR);
+	} while (c != EOF);
+
+	fclose(tx);//fclose "tx" file.
+	return 0;
+}
+
+void barcode_save(int barcode_num[12])
+{
+	FILE *lt = NULL;
+	int i;
+
+	fopen_s(&lt, LETSPLAY, "r+t");
+	if (lt == NULL) //letsPlay.txt was not created yet.
+	{
+		printf("letsPlay.txt was not found and will be created.\n");
+		fopen_s(&lt, LETSPLAY, "a+t");
+	}
+	else	fseek(lt, 0, SEEK_END);
+
+	for (i = 0; i < 12; i++)
+	{
+		fprintf_s(lt, "%d", barcode_num[i]);
+		printf_s("%d", barcode_num[i]);
+	}
+	fprintf_s(lt, "\n");
+	printf_s(" was inserted to the warehouse.\n");
+
+	fclose(lt);//fclose "lt" file.
+}
+
+int Barcode_to_int(char arr[7], int index)
+{
+	//Performs string comparison to identify the number acording UPC.
+	if (index < 6) //Each side of the bar code has an opposing reading.
+	{//left side
+		if (0 == strncmp(arr, "0001101", 7)) return 0;
+		if (0 == strncmp(arr, "0011001", 7)) return 1;
+		if (0 == strncmp(arr, "0010011", 7)) return 2;
+		if (0 == strncmp(arr, "0111101", 7)) return 3;
+		if (0 == strncmp(arr, "0100011", 7)) return 4;
+		if (0 == strncmp(arr, "0110001", 7)) return 5;
+		if (0 == strncmp(arr, "0101111", 7)) return 6;
+		if (0 == strncmp(arr, "0111011", 7)) return 7;
+		if (0 == strncmp(arr, "0110111", 7)) return 8;
+		if (0 == strncmp(arr, "0001011", 7)) return 9;
+	}
+	else
+	{//right side
+		if (0 == strncmp(arr, "1110010", 7)) return 0;
+		if (0 == strncmp(arr, "1100110", 7)) return 1;
+		if (0 == strncmp(arr, "1101100", 7)) return 2;
+		if (0 == strncmp(arr, "1000010", 7)) return 3;
+		if (0 == strncmp(arr, "1011100", 7)) return 4;
+		if (0 == strncmp(arr, "1001110", 7)) return 5;
+		if (0 == strncmp(arr, "1010000", 7)) return 6;
+		if (0 == strncmp(arr, "1000100", 7)) return 7;
+		if (0 == strncmp(arr, "1001000", 7)) return 8;
+		if (0 == strncmp(arr, "1110100", 7)) return 9;
+	}
+
+	return -1;
+}
+
+int pic_width(FILE *pictcher)
+{
+	int i, w = 0;
+	//skip 18 bytes
+	fseek(pictcher, 18, SEEK_SET);
+
+	//read the width of the image file
+	for (i = 0; i < 4; i++)
+	{
+		w = w | fgetc(pictcher) << (i * 8);
+	}
+	return w;
+};
+
+int pic_hight(FILE *pictcher1)
+{
+	int i, h = 0;
+	//skip 22 bytes
+	fseek(pictcher1, 22, SEEK_SET);
+
+	//read the hight of the image file
+	for (i = 0; i < 4; i++)
+	{
+		h = h | fgetc(pictcher1) << (i * 8);
+	}
+	return h;
+};
+
+int padding_lines(FILE *pictcher2)
+{
+	int i = 0, p = 0, w = pic_width(pictcher2);
+
+	//Calculate by: The number of bytes in a row divides by 4 with no remainder
+	for (i = 0; i < (w * 3); i = i + 4);
+	p = i - (w * 3);
+	return p;
+};
+
+//option 2:
+
+void genarat_barcode() {
+
+	int s, flag = 0;
+
+	while (flag == 0)
+	{
+		printf_s("Enter destination store (1-10):\n");
+		scanf_s("%d", &s);
+		if (s>0 && s <= 10)
+		{
+			++flag;
+			continue;
+		}
+		printf_s("Not valid!\n");
+	}
+	barcode_build(s);
+}
+
+void barcode_build(int store) {
+
+	int i, sum, gift, id;
+	int temp[12] = { 0 };
+
+	//creat gift and id num
+	do {
+		srand(time(NULL));
+		gift = rand() % 1000;
+		id = (rand()*rand()) % 1000000;
+	} while (gift_id_check(gift, id) != 0);
+
+	//make arr for new barcode
+	if (store == 10) { temp[3] = 1; }
+	else { temp[4] = store; }
+	temp[2] = gift % 10;
+	temp[1] = ((gift - temp[2]) / 10) % 10;
+	temp[0] = (((gift - temp[2]) / 10) - temp[1]) / 10;
+	temp[10] = id % 10;
+	temp[9] = ((id - temp[10]) / 10) % 10;
+	temp[8] = (((id - temp[10]) / 10 - temp[9]) / 10) % 10;
+	temp[7] = (((((id - temp[10]) / 10 - temp[9]) / 10) - temp[8]) / 10) % 10;
+	temp[6] = (((((((id - temp[10]) / 10 - temp[9]) / 10) - temp[8]) / 10) - temp[7]) / 10) % 10;
+	temp[5] = (((((((((id - temp[10]) / 10 - temp[9]) / 10) - temp[8]) / 10) - temp[7]) / 10) - temp[5]) / 10) % 10;
+	sum = 3 * (temp[0] + temp[2] + temp[4] + temp[6] + temp[8] + temp[10]) + (temp[1] + temp[3] + temp[5] + temp[7] + temp[9]);
+	for (i = 0; i < sum; i = i + 10);
+	temp[11] = i - sum;
+
+	barcode_save(temp);
+	barcode_to_bmp(temp);
+
+}
+
+int gift_id_check(int gift_num, int id_num) {
+
+	FILE *lt = NULL;
+	int i, k, sum, flag = 0;
+
+	fopen_s(&lt, LETSPLAY, "rt");
+	if (lt == NULL)  return 0;
+
+	while (flag == 0)
+	{
+		sum = 0;
+		for (i = 2; i > 0; i--)	sum = sum + (i * 10)* (fgetc(lt) - 48);
+		sum = sum + (fgetc(lt) - 48);
+
+		if (sum == gift_num) {
+			fclose(lt);
+			return 1;
+		}
+
+		for (i = 0; i < 2; i++)	fgetc(lt);
+		sum = 0;
+		for (i = 5; i > 0; i--) { sum = sum + (i * 10)* (fgetc(lt) - 48); }
+		sum = sum + (fgetc(lt) - 48);
+
+		if (sum == id_num) {
+			fclose(lt);
+			return 1;
+		}
+
+		for (i = 0; i < 3; i++)	k = fgetc(lt);
+		if (k == EOF) {
+			fclose(lt);
+			return 0;
+		}
+
+		fseek(lt, -1, SEEK_CUR);
+	}
+}
+
+void barcode_to_bmp(int b_code[12])
+{
+	FILE *new_bmp = header_for_bmp();
+	int i, j, k;
+	static int	mb[H_SIZE][W_SIZE];
+
+	if (new_bmp == NULL) {
+		printf_s("Error creating newbarcode.bmp file\n");
+		return;
+	}
+
+	//sets the guards in the matrix by put 1/0 . 
+	set_zeroes_and_guards(mb);
+
+	//fill matrix with valius .
+	for (i = 0; i < 12; i++)
+		put_code_in_matrix(mb, i, b_code[i]);
+
+	//wright valius in pic file .
+	for (i = 0; i < H_SIZE; i++) {
+		for (j = 0; j < W_SIZE; j++) {
+			if (mb[i][j] == 0)	k = 255;
+			else	k = 0;
+			fputc(k, new_bmp);
+			fputc(k, new_bmp);
+			fputc(k, new_bmp);
+		}
+	}
+
+	fclose(new_bmp);
+}
+
+void set_zeroes_and_guards(static int barcode_m[H_SIZE][W_SIZE])
+{
+	int i, j;
+
+	for (i = 0; i < H_SIZE; i++)
+	{
+		for (j = 0; j < W_SIZE; j++)
+			barcode_m[i][j] = 0;
+	}
+
+	for (i = 10; i < 58; i++)
+	{
+		barcode_m[i][21] = barcode_m[i][23] = barcode_m[i][67] = barcode_m[i][69] = barcode_m[i][113] = barcode_m[i][115] = 1;
+	}
+
+}
+
+void put_code_in_matrix(static int mat[H_SIZE][W_SIZE], int index, int code)
+{
+	int i, j, w = 24 + 7 * index;
+
+	if (index < 6) {//the left side of the barcode
+		switch (code) {
+		case 0: { mat[57][w + 3] = mat[57][w + 4] = mat[57][w + 6] = 1; break; }								  //0001101
+		case 1: { mat[57][w + 2] = mat[57][w + 3] = mat[57][w + 6] = 1; break; }								  //0011001
+		case 2: { mat[57][w + 2] = mat[57][w + 5] = mat[57][w + 6] = 1; break; } 								  //0010011
+		case 3: { mat[57][w + 1] = mat[57][w + 2] = mat[57][w + 3] = mat[57][w + 4] = mat[57][w + 6] = 1; break; }//0111101
+		case 4: { mat[57][w + 1] = mat[57][w + 5] = mat[57][w + 6] = 1; break;	}								  //0100011
+		case 5: { mat[57][w + 1] = mat[57][w + 2] = mat[57][w + 6] = 1; break;	}								  //0110001
+		case 6: { mat[57][w + 1] = mat[57][w + 3] = mat[57][w + 4] = mat[57][w + 5] = mat[57][w + 6] = 1; break; }//0101111
+		case 7: { mat[57][w + 1] = mat[57][w + 2] = mat[57][w + 3] = mat[57][w + 5] = mat[57][w + 6] = 1; break; }//0111011
+		case 8: { mat[57][w + 1] = mat[57][w + 2] = mat[57][w + 4] = mat[57][w + 5] = mat[57][w + 6] = 1; break; }//0110111
+		case 9: { mat[57][w + 3] = mat[57][w + 5] = mat[57][w + 6] = 1; break;	}
+		}							  //0001011
+	}
+	else {
+		w += 5;
+		switch (code) { //the right side of the barcode
+		case 0: { mat[57][w] = mat[57][w + 1] = mat[57][w + 2] = mat[57][w + 5] = 1; break;	} //0001101		
+		case 1: { mat[57][w] = mat[57][w + 1] = mat[57][w + 4] = mat[57][w + 5] = 1; break;	} //0011001
+		case 2: { mat[57][w] = mat[57][w + 1] = mat[57][w + 3] = mat[57][w + 4] = 1; break;	} //0010011
+		case 3: { mat[57][w] = mat[57][w + 5] = 1; break;									} //0111101
+		case 4: { mat[57][w] = mat[57][w + 2] = mat[57][w + 3] = mat[57][w + 4] = 1; break;	} //0100011
+		case 5: { mat[57][w] = mat[57][w + 3] = mat[57][w + 4] = mat[57][w + 5] = 1; break;	} //0110001
+		case 6: { mat[57][w] = mat[57][w + 2] = 1; break;									} //0101111
+		case 7: { mat[57][w] = mat[57][w + 4] = 1; break;									} //0111011
+		case 8: { mat[57][w] = mat[57][w + 3] = 1; break;									} //0110111
+		case 9: { mat[57][w] = mat[57][w + 1] = mat[57][w + 2] = mat[57][w + 4] = 1; break; }
+		} //0001011
+	}
+
+	for (i = 0; i < 7; i++) {
+		for (j = 12; j < 57; j++)	mat[j][w + i] = mat[57][w + i];
+	}
+
+}
+
+FILE *header_for_bmp()
+{
+	FILE *image = NULL;
+	int i, j;
+
+	fopen_s(&image, NEWBARCODE, "w+b");
+	if (image == NULL)
+		return NULL;
+
+	fputc(0x42, image);
+	fputc(0x4d, image);
+	fputc(0xffffffb2, image);
+	fputc(0x74, image);
+	for (i = 0; i < 6; i++)	fputc(0, image);
+	fputc(0x36, image);
+	for (i = 0; i < 3; i++)	fputc(0, image);
+	fputc(0x28, image);
+	for (i = 0; i < 3; i++)	fputc(0, image);
+	fputc(0xffffff8c, image);
+	for (i = 0; i < 3; i++)	fputc(0, image);
+	fputc(0x47, image);
+	for (i = 0; i < 3; i++)	fputc(0, image);
+	fputc(0x1, image);
+	fputc(0, image);
+	fputc(0x18, image);
+	for (i = 0; i < 5; i++)	fputc(0, image);
+	fputc(0x7c, image);
+	fputc(0x74, image);
+	for (i = 0; i < 18; i++)	fputc(0, image);
+
+	return image;
+}
+
+//option 3:
+
+int getOption() {
+	int d, flag = 0;
+	do
+	{
+		scanf_s("%d", &d);
+		if (d >= 1 && d <= 9 && d != 8)
+		{
+			flag = 1;
+			return d;
+		}
+		else
+		{
+			printf_s("Illegal Input\n");
+		}
+	} while (flag != 1);
+}
+
+void option3ListPacks() {
+	store_t *head = NULL, *ptr = NULL;
+	int store, s_in = store_number();
+	make_list(head, ptr, s_in);
+}
+
+int store_number()
+{
+	int num, flag = 0;
+	do
+	{
+		printf_s("Enter destination store (1-10):\n");
+		scanf_s("%d", &num);
+
+		if (num >= 1 && num <= 10)
+		{
+			return num;//Return the relevant store number
+		}
+		else
+		{
+			printf_s("Not valid!\n");
+		}
+	} while (flag == 0);
+}
+
+void make_list(store_t *first_item, store_t *ptr, int store) {
+
+	int i = 0, count;
+	FILE *text;
+	store_t *head = first_item;
+
+	fopen_s(&text, LETSPLAY, "r+t");//Open "letsplay" File for read
+	if (text == NULL) {//If the file isn't exist
+		printf_s("text missing \n");
+		return;
+	}
+	count = count_packages_for_store(text, store);
+	if (count > 0) {//If there are no packages, don't bulit a list
+
+		fseek(text, 0, SEEK_SET);//Back to the beginning of the file to set the list
+		for (i = 0; i < count; i++) {
+			ptr = malloc(sizeof(store_t));
+			data_to_list(ptr, text, store);
+			ptr->next = first_item;
+			ptr->flag = ptr->id = 0;
+			first_item = ptr;
+			set_flag_and_id_in_list(first_item);
+		}
+		matrix_list(first_item, count, store);
+		free_list(first_item);
+	}
+	else { printf_s("No packages here!\n"); }
+	fclose(text);
+}
+
+int count_packages_for_store(FILE *letsplay, int store)
+{
+	int ch = 0, i, package_number = 0;
+	char  t_store[2];
+
+	fseek(letsplay, 0, SEEK_SET);//Back to the beginning of the "letsplay" file 
+	while (ch != EOF) {
+		ch = fgetc(letsplay);
+		if (ch >= '0' && ch <= '9') {//check in the line if there is a number or its backspace or tab
+			fseek(letsplay, 2, SEEK_CUR);//Skeep to the store number in the barcode
+			for (i = 0; i < 2; i++)  t_store[i] = fgetc(letsplay);//Copy the store number in the temporary string
+		}
+		for (i = 0; i < 7; i++) fgetc(letsplay);//Skeep to the end of the barcode
+
+		if (store == atoi(t_store))  //Check if the barcode in the line is the barcode of the store that's the user asked for 
+			package_number++;
+		ch = fgetc(letsplay); /*cancel \n*/
+		for (i = 0; i < 2; i++) {//Reset the string for the next barcode
+			t_store[i] = NULL;
+		}
+	}
+	return package_number;
+}
+
+void data_to_list(store_t *pointer, FILE *text, int s_num) {
+	int i, t = 0, flag = 0, j = 0;
+
+	do
+	{
+		for (i = 0; i < 3; i++) fgetc(text);
+		t = (fgetc(text) - 48);
+
+		if (t == 1) { t = 10; }//If the first index is one its must to be store number 10
+		else { t = (fgetc(text) - 48); }
+		if (t != s_num) { for (i = 0; i < 8; i++) t = fgetc(text); }//If is not the store number skeep to the next line
+		else {
+			if (t < 10) fseek(text, -5, SEEK_CUR); // back 4 columns to the beggining og the barcode
+			else fseek(text, -4, SEEK_CUR); //If its store number 10 back 4 columns to the beggining og the barcode
+			flag++;
+		}
+	} while (flag == 0);
+
+	for (i = 0; i < 12; i++) {
+		pointer->data[i] = (fgetc(text) - 48);
+	}
+	pointer->next = NULL;
+	pointer->double_gift = 0;
+	fgetc(text);
+}
+
+void set_flag_and_id_in_list(store_t *store) {
+	int idnum[6] = { 0 }, giftnum[3] = { 0 };
+	int i, j, k, s, barcode_ID = 0, GIFT = 0;
+
+	for (i = 0, k = 0, j = 0; j < 11; j++)
+	{
+		if (j > 4) {//Skiping to barcode ID number
+			idnum[k] = store->data[j];
+			k++;
+		}
+		else if (j < 3) {//save to barcode gift number
+			giftnum[i] = store->data[j];
+			i++;
+		}
+		else continue;
+	}
+	for (s = 0; s < sizeof(idnum) / sizeof(int); s++)	barcode_ID = barcode_ID * 10 + idnum[s];
+
+	for (s = 0; s < sizeof(giftnum) / sizeof(int); s++) GIFT = GIFT * 10 + giftnum[s];
+
+	store->id = barcode_ID;
+	store->double_gift = GIFT;
+}
+
+void matrix_list(store_t *first, int num, int store_num) {
+	int i, j = 0, flag, k = 1;
+	int **Matrix, temp[4];
+	/*In the matrix:i is the number of packages and column 1 for barcode ID number, column 2 for barcode number,
+	column 3 for Marking the same gift number with diffrent barcode and column 4 for barcode gift number  */
+
+	Matrix = malloc(sizeof(int)*num);
+	for (i = 0; i < num; i++)  Matrix[i] = malloc(sizeof(int) * 4);
+	for (i = 0; i < num; i++) {
+		Matrix[i][j] = first->id; j++; Matrix[i][j] = first->data; j++;
+		Matrix[i][j] = first->flag; j++; Matrix[i][j] = first->double_gift; j++;
+		first = first->next; j = 0;
+	}
+	do {//Bubble sort
+		flag = 0;
+		for (i = 0, j = 0; i < num - k; i++) {
+			if (Matrix[i][j] > Matrix[i + 1][j]) {
+				temp[j] = Matrix[i][j]; j++; temp[j] = Matrix[i][j]; j++;
+				temp[j] = Matrix[i][j]; j++; temp[j] = Matrix[i][j]; j = 0;
+
+				Matrix[i][j] = Matrix[i + 1][j]; j++; Matrix[i][j] = Matrix[i + 1][j]; j++;
+				Matrix[i][j] = Matrix[i + 1][j]; j++; Matrix[i][j] = Matrix[i + 1][j]; j = 0;
+
+				Matrix[i + 1][j] = temp[j]; j++; Matrix[i + 1][j] = temp[j]; j++;
+				Matrix[i + 1][j] = temp[j]; j++; Matrix[i + 1][j] = temp[j]; j = 0;
+				flag = 1;
+			}
+		}k++;
+	} while (flag != 0);
+
+	print_list(Matrix, num, store_num);
+	for (i = 0; i < num; i++)  free(Matrix[i]);
+	free(Matrix);
+}
+
+void print_list(int *list[], int rows, int store) {
+	int i = 0, j = 1;
+	/*while (i != rows) {//Search for the same ID number
+		if (list[i][3] == list[j][3] && (i != j)) 	list[i][2] = 1;
+
+		j++;
+		if (j == rows) {//Reset j and skip to the next barcode
+			j = 0;
+			i++;
+		}
+	}*/
+	printf_s("List of packages for store number %d:\nID\tGIFT\n------\t------\n", store);
+	for (i = 0; i < rows; i++) {
+		printf_s("%d\t%d\n", *list[i], list[i][3]);
+		if (list[i][2] == 1) printf_s("Double gift\n");
+	}
+}
+
+void free_list(store_t *head) {
+	if (head == NULL) return;
+
+	free_list(head->next);
+	free(head);
+}
+
+//option 4:
+
+int option4PrintsPathes() {
+	int numchar, temp, rownum, i, j, count = 0;
+	char *maptext;
+	FILE *map;
+	mapdetail_t *mapdet;
+	shopid_t station[11];
+	temp = fopen_s(&map, MAP, "rt");
+	if (temp != 0) {
+		printf_s("file map.txt not found\n");
+		return;
+	}
+	fseek(map, 0, SEEK_END);
+	numchar = ftell(map);
+	fseek(map, 0, SEEK_SET);
+	maptext = malloc((numchar + 1) * sizeof(char));
+	memset(maptext, 0, numchar + 1);
+	fread(maptext, 1, numchar, map);
+	fclose(map);//
+	rownum = (countrow(numchar, maptext) / 3);
+	mapdet = calloc(rownum, sizeof(mapdetail_t));//
+	for (i = 0; i < 11; i++) { station[i].id = i; zeroes(&station[i]); }
+
+	Mapdetail(mapdet, maptext, numchar, rownum);
+
+	free(maptext);
+	listconctionbilder(rownum, mapdet, station);
+	free(mapdet);
+	printroute(station, station, NULL, 4);
+	return(0);
+}
+
+int countrow(int numchar, char*maptext) {
+	int rownum = 0, i;
+	for (i = 0; i < numchar; i++) {
+		if (maptext[i] == '\n' || maptext[i] == '	' || maptext[i] == ' ') {
+			i++;
+		}
+		while (maptext[i] > 47 && maptext[i] < 58)
+		{
+			i++;
+		}
+		if (maptext[i] == 0) { break; }
+		rownum++;
+	}
+
+	return(rownum);
+}
+
+void listconctionbilder(int rownum, mapdetail_t *mapdet, shopid_t *station) {
+	int i;
+	for (i = 0; i < rownum; i++)
+	{
+		if (station[mapdet[i].from].next1 == NULL)
+		{
+			station[mapdet[i].from].next1 = &station[mapdet[i].to];
+			station[mapdet[i].from].dis1 = mapdet[i].dis;
+
+		}
+		else if (station[mapdet[i].from].next2 == NULL)
+		{
+			station[mapdet[i].from].next2 = &station[mapdet[i].to];
+			station[mapdet[i].from].dis2 = mapdet[i].dis;
+
+		}
+		else if (station[mapdet[i].from].next3 == NULL)
+		{
+			station[mapdet[i].from].next3 = &station[mapdet[i].to];
+			station[mapdet[i].from].dis3 = mapdet[i].dis;
+
+		}
+	}
+
+
+}
+
+void Mapdetail(mapdetail_t *mapdet, char *maptext, int numchar, int rnum) {
+	int i = 0, j = 0;
+
+	for (i = 0; i < numchar; i++) {
+		while (maptext[i] == '\n' || maptext[i] == '	' || maptext[i] == ' ') {
+			i++;
+		}
+		mapdet[j].from = atoi(maptext + i);
+		while (maptext[i] > 47 && maptext[i] < 58)
+		{
+			i++;
+		}
+		while (maptext[i] == '\n' || maptext[i] == '	' || maptext[i] == ' ') {
+			i++;
+		}
+		mapdet[j].to = atoi(maptext + i);
+		while (maptext[i] > 47 && maptext[i] < 58)
+		{
+			i++;
+		}
+		while (maptext[i] == '\n' || maptext[i] == '	' || maptext[i] == ' ') {
+			i++;
+		}
+		mapdet[j].dis = atoi(maptext + i);
+		j++;
+		if (j == rnum)break;
+	}
+
+}
+
+void printroute(shopid_t *shop, shopid_t* factory, shopid_t* caller, int callid) {
+	if (shop->v1 == 1 && shop->v2 == 1 && shop->v3 == 1) return;///כאשר כל הנאקסטים מלאים 
+	printf_s("%d", shop->id);//ולהדפיס אנו אומרים למצביע שמצביע על הכתובת של החנות מטו, להצביע על מספר החנות שמייצג אותה
+	if (shop->id == 0 && callid != 4)//כאשר הגענו אל הספרה אפס כלומר בסוף המפעל
+	{
+		return;
+	}
+
+	if (shop->next1 != NULL && shop->v1 == 0) {
+		printf_s("->");
+		printroute(shop->next1, factory, shop, 1);
+		shop->v1 = 1;
+		if (shop->next2 != NULL)
+		{
+			switch (callid)
+			{
+			case 1: {
+				caller->v1 = 0;
+				break;
+			}
+			case 2: {
+				caller->v2 = 0;
+				break;
+			}
+			case 3: {
+				caller->v3 = 0;
+				break;
+			}
+			}
+			printf_s("\n");
+
+			printroute(factory, factory, NULL, 4);
+		}
+	}
+	else	if (shop->next2 != NULL && shop->v2 == 0) {
+
+		printf_s("->");
+		printroute(shop->next2, factory, shop, 2);
+		shop->v2 = 1;
+		if (shop->next3 != NULL)
+		{
+			switch (callid)
+			{
+			case 1: {
+				caller->v1 = 0;
+				break;
+			}
+			case 2: {
+				caller->v2 = 0;
+				break;
+			}
+			case 3: {
+				caller->v3 = 0;
+				break;
+			}
+			}
+			printf_s("\n");
+
+			printroute(factory, factory, NULL, 4);
+		}
+
+	}
+	else if (shop->next3 != NULL && shop->v3 == 0) {
+		printf_s("->");
+		printroute(shop->next3, factory, shop, 3);
+		shop->v3 = 1;
+	}
+	if (shop != factory) {
+		shop->v1 = 0;
+		shop->v2 = 0;
+		shop->v3 = 0;
+	}
+}
+
+void zeroes(shopid_t *station) {
+
+	station->v1 = 0;
+	station->v2 = 0;
+	station->v3 = 0;
+	station->flag = 0;
+	station->dis1 = 0;
+	station->dis2 = 0;
+	station->dis3 = 0;
+	station->disdes1 = 0;
+	station->disdes2 = 0;
+	station->disdes3 = 0;
+	station->next1 = NULL;
+	station->next2 = NULL;
+	station->next3 = NULL;
+}
+
+//option 5:
+
+int option5DriverPath() {
+	int numchar, temp, temp1, rownum, i, j, count = 0;
+	char *maptext;
+	FILE *map, *ptrfile;
+	mapdetail_t *mapdet;
+	shopid_t station[11];
+	shopid_t *tree, *rout[100];
+	temp = fopen_s(&map, MAP, "rt");
+	if (temp != 0) {
+		printf_s("file map.txt not found\n");
+		return;
+	}
+	fopen_s(&ptrfile, "rout.txt", "wt");
+
+	fseek(map, 0, SEEK_END);
+	numchar = ftell(map);
+	fseek(map, 0, SEEK_SET);
+	maptext = malloc((numchar + 1) * sizeof(char));
+	memset(maptext, 0, numchar + 1);
+	fread(maptext, 1, numchar, map);
+	fclose(map);//
+	rownum = (countrow(numchar, maptext) / 3);
+	mapdet = malloc(rownum * sizeof(mapdetail_t));//
+	for (i = 0; i < 11; i++) { station[i].id = i; zeroes(&station[i]); }
+	for (i = 0; i < 11; i++) count_packages(&station[i]);//
+	Mapdetail(mapdet, maptext, numchar, rownum);
+	free(maptext);
+	listconctionbilder(rownum, &mapdet[0], &station[0]);
+	free(mapdet);
+	//-----------------------------------------
+	tree = malloc(sizeof(shopid_t));
+	tree = all_paths(&station[0], tree);
+	zero(tree, station);
+
+	TheDisDes(tree);
+	ThePackdes(tree);
+	Search(tree, rout, 0, 0, 0);
+	theprinter(rout, ptrfile);
+	Free_tree(tree);
+	fclose(ptrfile);
+
+
+
+}
+
+void Free_tree(shopid_t *tree) {
+	if (tree == NULL)
+	{
+		return;
+	}
+	Free_tree(tree->next1);
+	Free_tree(tree->next2);
+	Free_tree(tree->next3);
+	free(tree);
+}
+
+void count_packages(shopid_t *store)
+{
+	int i, j = 0, package_number = 0, temp;
+	FILE *letsplay;
+	char  ch = NULL, t_store[3];
+	int size;
+	memset(t_store, 0, 3);
+	store->packs = 0;
+	temp = fopen_s(&letsplay, LETSPLAY, "rt");
+	if (temp != 0)
+	{
+		printf_s("file map.txt not found\n");
+		return;
+	}
+	fseek(letsplay, 0, SEEK_END);
+
+	size = ftell(letsplay);
+
+	fseek(letsplay, 0, SEEK_SET);
+
+	while ((size - j)>6)
+
+	{
+		ch = fgetc(letsplay);
+		j++;
+		if (ch >= '0' && ch <= '9')
+		{
+			fseek(letsplay, 2, SEEK_CUR);
+			j++;
+			j++;
+			for (i = 0; i < 2; i++)
+			{
+				t_store[i] = fgetc(letsplay);
+				j++;
+			}
+		}
+		for (i = 0; i < 7; i++)
+		{
+			ch = fgetc(letsplay);
+			j++;
+		}
+		if (store->id == atoi(t_store))
+		{
+			store->packs++;
+		}
+		if (ch == EOF)
+		{
+			break;
+		}
+		ch = fgetc(letsplay);
+		j++;
+
+	}
+	fclose(letsplay);
+}
+
+shopid_t *TheTreeBilder(shopid_t *map, shopid_t *tree) {
+	int temp = map->v1;
+	shopid_t *hold;
+	tree->v1 = temp;
+	map->v1 = 1;
+	tree->id = map->id;
+	tree->packs = map->packs;
+	tree->dis1 = map->dis1;
+	tree->dis2 = map->dis2;
+	tree->dis3 = map->dis3;
+	tree->disdes1 = tree->disdes2 = tree->disdes3 = 0;
+
+	if (!map->next1 || map->next1->v1 == 1)
+		tree->next1 = NULL;
+	else {
+		hold = malloc(sizeof(shopid_t));
+		tree->next1 = TheTreeBilder(map->next1, hold);
+	}
+
+	if (!map->next2 || map->next2->v1 == 1)
+		tree->next2 = NULL;
+	else {
+		hold = malloc(sizeof(shopid_t));
+		tree->next2 = TheTreeBilder(map->next2, hold);
+	}
+	if (!map->next3 || map->next3->v1 == 1)
+		tree->next3 = NULL;
+	else {
+		hold = malloc(sizeof(shopid_t));
+		tree->next3 = TheTreeBilder(map->next3, hold);
+	}
+	return tree;
+}
+
+int TheDisDes(shopid_t *shop) {
+	int minimum = 0;
+	if (shop->next1)
+	{
+		shop->disdes1 = shop->dis1 + TheDisDes(shop->next1);
+	}
+	if (shop->next2)
+	{
+		shop->disdes2 = shop->dis2 + TheDisDes(shop->next2);
+
+	}
+	if (shop->next3)
+	{
+		shop->disdes3 = shop->dis3 + TheDisDes(shop->next3);
+
+	}
+	if (!shop->next1 && !shop->next2 && !shop->next3)
+	{
+		if (shop->id == 0)
+		{
+			return(0);
+		}
+		else
+		{
+			return(10000);
+		}
+
+	}
+	else
+	{
+		if (shop->disdes1 == 0)shop->disdes1 = 10000;
+		if (shop->disdes2 == 0)shop->disdes2 = 10000;
+		if (shop->disdes3 == 0)shop->disdes3 = 10000;
+
+		if (shop->disdes1<shop->disdes2)
+		{
+			minimum = shop->disdes1;
+		}
+		if (shop->disdes3<minimum)
+		{
+			minimum = shop->disdes3;
+		}
+		return(minimum);
+	}
+
+
+
+
+
+}
+
+int ThePackdes(shopid_t *shop) {
+	int maximum = 0;
+	if (shop->next1)
+	{
+		shop->packdes1 = shop->packs + ThePackdes(shop->next1);
+	}
+	if (shop->next2)
+	{
+		shop->packdes2 = shop->packs + ThePackdes(shop->next2);
+
+	}
+	if (shop->next3)
+	{
+		shop->packdes3 = shop->packs + ThePackdes(shop->next3);
+
+	}
+	if (!shop->next1 && !shop->next2 && !shop->next3)
+	{
+		if (shop->id == 0)
+		{
+			return(0);
+		}
+		else
+		{
+			return(-10000);
+		}
+
+	}
+	else
+	{
+		if (shop->packdes1 == 0)shop->packdes1 = -10000;
+		if (shop->packdes2 == 0)shop->packdes2 = -10000;
+		if (shop->packdes3 == 0)shop->packdes3 = -10000;
+
+		if (shop->packdes1>shop->packdes2)
+		{
+			maximum = shop->packdes1;
+		}
+		if (shop->packdes3>maximum)
+		{
+			maximum = shop->packdes3;
+		}
+		return(maximum);
+	}
+
+
+}
+
+shopid_t *all_paths(shopid_t *map, shopid_t *tree) {
+	char temp;
+	shopid_t *hold;
+	tree->dis1 = map->dis1; tree->dis2 = map->dis2; tree->dis3 = map->dis3;
+	tree->disdes1 = tree->disdes2 = tree->disdes3 = 0;
+	tree->packdes1 = tree->packdes2 = tree->packdes3 = 0;
+
+	tree->packs = map->packs;
+
+	temp = map->id;
+	tree->id = temp;
+	map->id = 'v'; // Mark as visited. 
+
+	if (!map->next1 || map->next1->id == 'v')
+		tree->next1 = NULL;
+	else {
+		hold = malloc(sizeof(shopid_t)); tree->next1 = all_paths(map->next1, hold);
+	}
+
+	//go right 
+	if (!map->next2 || map->next2->id == 'v')
+		tree->next2 = NULL;
+	else {
+		hold = malloc(sizeof(shopid_t));
+		tree->next2 = all_paths(map->next2, hold);
+	}
+
+	if (!map->next3 || map->next3->id == 'v')
+		tree->next3 = NULL;
+	else {
+		hold = malloc(sizeof(shopid_t)); tree->next3 = all_paths(map->next3, hold);
+	}
+
+
+	map->id = temp; return tree;
+}
+
+void zero(shopid_t *tree, shopid_t map[]) {
+	int i = 0, j = 0, k = 0;
+	if (tree->next1) {
+		zero(tree->next1, map);
+	}
+	if (tree->next2) {
+		zero(tree->next2, map);
+	}
+	if (tree->next3) {
+		zero(tree->next3, map);
+	}
+	if (!tree->next1 && !tree->next2 && !tree->next3) {
+		if (tree->dis1 != 0)	i = 1;
+		if (tree->dis2 != 0)	j = 1;
+		if (tree->dis3 != 0)	k = 1;
+
+		if (i == 1 && map[tree->id].next1->id == 0)
+		{
+			tree->next1 = malloc(sizeof(shopid_t));
+			tree->next1->id = 0;
+			tree->next1->next1 = tree->next1->next2 = tree->next1->next3 = NULL;
+		}
+		if (j == 1 && map[tree->id].next2->id == 0)
+		{
+			tree->next2 = malloc(sizeof(shopid_t));
+			tree->next2->id = 0;
+			tree->next2->next1 = tree->next2->next2 = tree->next2->next3 = NULL;
+
+
+		}
+		if (k == 1 && map[tree->id].next3->id == 0)
+		{
+			tree->next3 = malloc(sizeof(shopid_t));
+			tree->next3->id = 0;
+			tree->next3->next1 = tree->next3->next2 = tree->next3->next3 = NULL;
+
+		}
+
+
+	}
+
+
+}
+
+void Search(shopid_t *tree, shopid_t* rout[], int k, int distans, int totalpack) {
+	shopid_t *TheNext;
+	int eq1 = 0, eq2 = 0, eq3 = 0, flag, j = 1, i = 0;
+	search arr[3], temp;
+
+	rout[k] = tree;
+	rout[k]->v1 = distans;
+	if (rout[k]->id == 0)rout[k]->packs = 0;
+	rout[k]->v2 = rout[k]->packs + totalpack;
+	if (tree->id == 0 && tree->next1 == NULL && tree->next2 == NULL && tree->next3 == NULL) { return; }
+	arr[0].des = tree->disdes1;
+	arr[1].des = tree->disdes2;
+	arr[2].des = tree->disdes3;
+	arr[0].pack = tree->packdes1;
+	arr[1].pack = tree->packdes2;
+	arr[2].pack = tree->packdes3;
+	arr[0].nexty = tree->next1;
+	arr[1].nexty = tree->next2;
+	arr[2].nexty = tree->next3;
+	arr[0].dis = tree->dis1;
+	arr[1].dis = tree->dis2;
+	arr[2].dis = tree->dis3;
+
+
+	do {
+		flag = 0;
+		for (i = 0; i<3 - j; i++) {
+			if (arr[i].pack < arr[i + 1].pack) {
+				// Swap
+				temp = arr[i];
+				arr[i] = arr[i + 1];
+				arr[i + 1] = temp;
+				flag = 1;
+			}
+		}
+		j++;
+	} while (flag != 0);
+
+
+
+
+
+	if (arr[0].pack == arr[1].pack)
+	{
+		eq1 = eq2 = 1;
+		if (arr[2].pack == arr[1].pack)
+		{
+			eq3 = 1;
+		}
+
+	}
+
+	if (eq1 != 1) {
+		Search(arr[0].nexty, rout, k + 1, arr[0].dis + distans, rout[k]->v2);
+		return;
+	}
+
+	else if (eq3 != 1)
+	{
+		arr[2].des = 10000;
+	}
+	do {
+		flag = 0;
+		for (i = 0; i<3 - j; i++) {
+			if (arr[i].des > arr[i + 1].des) {
+				// Swap
+				temp = arr[i];
+				arr[i] = arr[i + 1];
+				arr[i + 1] = temp;
+				flag = 1;
+			}
+		}
+		j++;
+	} while (flag != 0);
+
+	Search(arr[0].nexty, rout, k + 1, arr[0].dis + distans, rout[k]->v2);
+
+
+
+}
+
+void theprinter(shopid_t *rout[], FILE*ptrfile) {
+	int i = 1;
+	fputs("Driver Route:\n0->", ptrfile);
+	while (rout[i]->id != 0) {
+		fprintf_s(ptrfile, "%d->", rout[i]->id);
+		i++;
+
+	}
+	fputs("0\nStore	Packages Distance so far[km]\n----	-------- ------------------- \n", ptrfile);
+	i = 1;
+	while (rout[i]->id != 0) {
+		fprintf_s(ptrfile, "%d	%d	%d\n", rout[i]->id, rout[i]->packs, rout[i]->v1);
+		i++;
+
+	}
+	fprintf_s(ptrfile, "%d	%d	%d\n", rout[i]->id, rout[i]->packs, rout[i]->v1);
+	fprintf_s(ptrfile, "The total packages available for this route is %d\nThe total suggested route distance is %d", rout[i]->v2, rout[i]->v1);
+
+	i = 1;
+
+	printf_s("Driver Route:\n0->");
+	while (rout[i]->id != 0) {
+		printf_s("%d->", rout[i]->id);
+		i++;
+
+	}
+	printf_s("0\nThe total packages available for this route is %d\nThe total suggested route distance is %d\n", rout[i]->v2, rout[i]->v1);
+
+}
+
+//option 6:
+
+void option6FuelConsumption() {
+	FILE *map;
+	fopen_s(&map, MAP, "r+t");
+	if (map)
+	{
+		get_way(map); //int this function the file will close at the end of the function
+		fclose(map);//close File
+		return 0;
+	}
+	else
+	{
+		printf_s("file map.txt not found\n");
+		return -1;
+	}
+}
+
+void get_way(FILE *m) { //Amit Lazar
+	int numchar, temp1, rownum, i, count = 0, pack = 0, route = 0;
+	char *maptext;
+	mapdetail_t *mapdet;
+	shopid_t station[11], *tree, *rout[100];
+
+	fseek(m, 0, SEEK_END);
+	numchar = ftell(m);
+	fseek(m, 0, SEEK_SET);
+	maptext = malloc(numchar * sizeof(char) + 1);
+	memset(maptext, 0, numchar + 1);
+	fread(maptext, 1, numchar, m);
+	rownum = (countrow(numchar, maptext) / 3); //מספר כבישים
+	mapdet = malloc(rownum * sizeof(mapdetail_t));
+	for (i = 0; i < 11; i++) {
+		station[i].id = i; zeroes(&station[i]);
+	}
+	for (i = 0; i < 11; i++) { count_packages(&station[i]); }
+	Mapdetail(&mapdet[0], &maptext[0], numchar,rownum);
+	listconctionbilder(rownum, &mapdet[0], &station[0]);
+	tree = malloc(sizeof(shopid_t)); tree = all_paths(&station[0], tree);
+	zero(tree, station);
+	TheDisDes(tree);
+	ThePackdes(tree);
+	Search(tree, rout, 0, 0, 0);
+	fclose(m); //close pointer file
+	calculation(rout);
+	Free_tree(tree);
+}
+
+int get_fuel_tank()//Amit Lazar
+{
+	//User Cannote exit from this function untill he enterd intger between 0 to 100
+	int num = 0, flag = 0;
+	do
+	{
+		printf_s("Set fuel in the truck's tank. Enter an integer number from 0-100\n");
+		scanf_s("%d", &num);
+		if (num >= 0 && num <= 100)
+		{
+			flag = 1;
+			return num;
+		}
+		else
+		{
+			printf_s("Illegal Input for fuel\n");
+		}
+	} while (flag != 1);
+}
+
+void calculation(shopid_t *rout[])/*Amit Lazar*/ {
+	int j = 1, litter = get_fuel_tank(), flag = 0; /*Flag to mark the arrivel to the last store*/
+	float dtime = 0, time = 0, new_fuel = (float)litter, time0 = 0; /*dtime-difference time, time0-current time*/
+	FILE *text;
+
+	fopen_s(&text, FUEL, "w+t"); //open fuel file for writing
+	if (!text) { //If FUEL file is for "read only"
+		printf_s("file fuel.txt not found\n");
+		return -1;
+	}
+
+	printf_s("Driving to %d\nTime\tFuel\tPackacges\n", rout[j]->id);
+	fprintf_s(text, "Driving to %d\nTime\tFuel\tPackacges\n", rout[j]->id);
+	while (rout[j] != NULL) {
+		time = (rout[j]->v1 / VELOCITY);
+		dtime = (time / (float)K);
+		if (new_fuel < 0) { new_fuel = 0; } //Fuel cannot be a negative number
+		printf_s("%0.3f\t%0.1f\t%d\n", time0, new_fuel, rout[j]->packs);
+		fprintf_s(text, "%0.3f\t%0.1f\t%d\n", time0, new_fuel, rout[j]->packs);
+		new_fuel = new_fuel - dtime * Fuel_consumption_coefficient * new_fuel*rout[j]->packs - dtime * CONSTANT;
+		time0 += dtime;
+		if (time0 > time) {
+			if (flag == 0) {
+				j++;
+				printf_s("Driving to %d\nTime\tFuel\tPackacges\n", rout[j]->id);
+				fprintf_s(text, "Driving to %d\nTime\tFuel\tPackacges\n", rout[j]->id);
+				if (rout[j]->id == 0) { flag = 1; }
+			}
+			else { break; }
+		}
+	} fclose(text); //close fuel file
+}
+
+//option 7:
+
